@@ -17,7 +17,7 @@ enum class ESaveStructState : uint8
 };
 
 USTRUCT(BlueprintType)
-struct FSaveStructInfo
+struct AUTOSAVE_API FSaveStructInfo
 {
 	GENERATED_BODY()
 
@@ -50,7 +50,7 @@ class AUTOSAVE_API UAutoSaveSubsystem : public UGameInstanceSubsystem, public FT
 {
 	GENERATED_BODY()
 
-	friend struct FSaveStructPtr;
+	friend class UAutoSaveBlueprintLibrary;
 
 public:
 
@@ -65,7 +65,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AutoSave")
 	void GetSaveStructInfosWithoutData(TArray<FSaveStructInfo>& OutSaveStructInfos) const;
 
-	FSaveStruct* AddSaveStructRef(const FString& Filename, UScriptStruct* ScriptStruct);
+	FSaveStruct* AddSaveStructRef(const FString& Filename, UScriptStruct* ScriptStruct = nullptr);
 
 	void RemoveSaveStructRef(const FString& Filename);
 	

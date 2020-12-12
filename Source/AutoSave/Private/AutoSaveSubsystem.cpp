@@ -30,21 +30,29 @@ void UAutoSaveSubsystem::GetSaveStructInfosWithoutData(TArray<FSaveStructInfo>& 
 
 FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScriptStruct * ScriptStruct)
 {
-	const bool bIsCppStruct = ScriptStruct->IsChildOf(FSaveStruct::StaticStruct());
-	const bool bIsBlueprintStruct = ScriptStruct->GetClass() == UUserDefinedStruct::StaticClass();
-
-	if (!bIsCppStruct && !bIsBlueprintStruct)
-		return nullptr;
-
 	if (StructInfos.Contains(Filename))
 	{
 		FSaveStructInfo* StructInfo = StructInfos[Filename].Get();
+
+		if (ScriptStruct && ScriptStruct != StructInfo->Struct)
+		{
+			UE_LOG(LogAutoSave, Warning, TEXT("The requested Save Struct '%s' type conflicts with the existing."), *Filename);
+			return nullptr;
+		}
 
 		// Increase the reference count of SaveStruct by one, and then decrease it accordingly in UAutoSaveSubsystem::RemoveSaveStructRef
 		StructInfo->RefConut++;
 
 		return (FSaveStruct*)StructInfo->Data.GetData();
 	}
+
+	if (!ScriptStruct) return nullptr;
+
+	const bool bIsCppStruct = ScriptStruct->IsChildOf(FSaveStruct::StaticStruct());
+	const bool bIsBlueprintStruct = ScriptStruct->GetClass() == UUserDefinedStruct::StaticClass();
+
+	if (!bIsCppStruct && !bIsBlueprintStruct)
+		return nullptr;
 
 	TUniquePtr<FSaveStructInfo> NewStructInfo(new FSaveStructInfo());
 
@@ -53,6 +61,7 @@ FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScr
 		NewStructInfo->Filename = Filename;
 		NewStructInfo->Struct = ScriptStruct;
 		NewStructInfo->Data.SetNumUninitialized(ScriptStruct->GetStructureSize());
+		ScriptStruct->InitializeStruct(NewStructInfo->Data.GetData());
 		NewStructInfo->State = ESaveStructState::Preload;
 		NewStructInfo->RefConut = 1;
 		NewStructInfo->LastRefConut = 0;
@@ -112,7 +121,7 @@ UAutoSaveSubsystem::FStructLoadOrSaveTask::FStructLoadOrSaveTask(FSaveStructInfo
 	{
 	case ESaveStructState::Preload:
 		StructInfoPtr->State = ESaveStructState::Loading;
-		DataCopy.SetNumUninitialized(StructInfoPtr->Data.Num());
+		DataCopy = StructInfoPtr->Data;
 		break;
 
 	case ESaveStructState::Idle:
@@ -292,11 +301,29 @@ void UAutoSaveSubsystem::Initialize(FSubsystemCollectionBase & Collection)
 
 void UAutoSaveSubsystem::Deinitialize()
 {
+	// Make sure the tasks are completed
 	for (TUniquePtr<FAsyncTask<FStructLoadOrSaveTask>>& Task : TaskThreads)
 	{
 		if (!Task) continue;
 		Task->EnsureCompletion();
 		Task = nullptr;
+	}
+
+	// Make sure objects are saved
+	for (const TPair<FString, TUniquePtr<FSaveStructInfo>>& Info : StructInfos)
+	{
+		// Skip objects that are not loaded
+		if (Info.Value->State == ESaveStructState::Preload) continue;
+
+		check(Info.Value->State == ESaveStructState::Idle);
+
+		if (Info.Value->RefConut > 0)
+		{
+			UE_LOG(LogAutoSave, Warning, TEXT("The subsystem deinitialize, but '%s' still has references."), *Info.Value->Filename);
+		}
+
+		FAsyncTask<FStructLoadOrSaveTask> Task(Info.Value.Get());
+		Task.StartSynchronousTask();
 	}
 }
 
