@@ -2,7 +2,7 @@
 
 #include "Kismet/GameplayStatics.h"
 
-bool UAutoSaveBlueprintLibrary::AddSaveStructRef(UObject * WorldContextObject, const FString & Filename, UScriptStruct * ScriptStruct)
+bool UAutoSaveBlueprintLibrary::AddSaveStructRef(UObject * WorldContextObject, const FString & Filename, UScriptStruct * ScriptStruct, FSaveStructLoadDelegate OnLoaded)
 {
 	UGameInstance* GameInstance = UGameplayStatics::GetGameInstance(WorldContextObject);
 
@@ -12,7 +12,7 @@ bool UAutoSaveBlueprintLibrary::AddSaveStructRef(UObject * WorldContextObject, c
 	
 	if (!AutoSaveSubsystem) return false;
 
-	return AutoSaveSubsystem->AddSaveStructRef(Filename, ScriptStruct) != nullptr;
+	return AutoSaveSubsystem->AddSaveStructRef(Filename, ScriptStruct, OnLoaded) != nullptr;
 }
 
 void UAutoSaveBlueprintLibrary::RemoveSaveStructRef(UObject * WorldContextObject, const FString & Filename)

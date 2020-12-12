@@ -7,6 +7,9 @@
 USTRUCT(BlueprintType)
 struct AUTOSAVE_API FSaveStruct { GENERATED_BODY() };
 
+DECLARE_DYNAMIC_DELEGATE_OneParam(FSaveStructLoadDelegate, const FString&, Filename);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSaveStructLoadDelegates, const FString&, Filename);
+
 UENUM(BlueprintType, Category = "AutoSave")
 enum class ESaveStructState : uint8
 {
@@ -43,6 +46,9 @@ struct AUTOSAVE_API FSaveStructInfo
 	TArray<uint8> Data;
 	// FSaveStruct* Data;
 
+	UPROPERTY()
+	FSaveStructLoadDelegates OnLoaded;
+
 };
 
 UCLASS(Config = Engine, DefaultConfig)
@@ -65,7 +71,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AutoSave")
 	void GetSaveStructInfosWithoutData(TArray<FSaveStructInfo>& OutSaveStructInfos) const;
 
-	FSaveStruct* AddSaveStructRef(const FString& Filename, UScriptStruct* ScriptStruct = nullptr);
+	FSaveStruct* AddSaveStructRef(const FString& Filename, UScriptStruct* ScriptStruct = nullptr, FSaveStructLoadDelegate OnLoaded = FSaveStructLoadDelegate());
 
 	void RemoveSaveStructRef(const FString& Filename);
 	

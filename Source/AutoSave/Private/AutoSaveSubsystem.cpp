@@ -28,7 +28,7 @@ void UAutoSaveSubsystem::GetSaveStructInfosWithoutData(TArray<FSaveStructInfo>& 
 	}
 }
 
-FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScriptStruct * ScriptStruct)
+FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScriptStruct * ScriptStruct, FSaveStructLoadDelegate OnLoaded)
 {
 	if (StructInfos.Contains(Filename))
 	{
@@ -42,6 +42,15 @@ FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScr
 
 		// Increase the reference count of SaveStruct by one, and then decrease it accordingly in UAutoSaveSubsystem::RemoveSaveStructRef
 		StructInfo->RefConut++;
+
+		if (StructInfo->State == ESaveStructState::Preload || StructInfo->State == ESaveStructState::Loading)
+		{
+			StructInfo->OnLoaded.Add(OnLoaded);
+		}
+		else
+		{
+			OnLoaded.ExecuteIfBound(Filename);
+		}
 
 		return (FSaveStruct*)StructInfo->Data.GetData();
 	}
@@ -60,12 +69,13 @@ FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScr
 	{
 		NewStructInfo->Filename = Filename;
 		NewStructInfo->Struct = ScriptStruct;
-		NewStructInfo->Data.SetNumUninitialized(ScriptStruct->GetStructureSize());
-		ScriptStruct->InitializeStruct(NewStructInfo->Data.GetData());
 		NewStructInfo->State = ESaveStructState::Preload;
 		NewStructInfo->RefConut = 1;
 		NewStructInfo->LastRefConut = 0;
 		NewStructInfo->LastSaveTime = FDateTime::Now();
+		NewStructInfo->Data.SetNumUninitialized(ScriptStruct->GetStructureSize());
+		ScriptStruct->InitializeStruct(NewStructInfo->Data.GetData());
+		NewStructInfo->OnLoaded.Add(OnLoaded);
 	}
 	else
 	{
@@ -75,12 +85,13 @@ FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScr
 
 		NewStructInfo->Filename = Filename;
 		NewStructInfo->Struct = ScriptStruct;
-		NewStructInfo->Data.SetNumUninitialized(ScriptStruct->GetStructureSize());
-		ScriptStruct->InitializeStruct(NewStructInfo->Data.GetData());
 		NewStructInfo->State = ESaveStructState::Idle;
 		NewStructInfo->RefConut = 1;
 		NewStructInfo->LastRefConut = 0;
 		NewStructInfo->LastSaveTime = FDateTime::Now();
+		NewStructInfo->Data.SetNumUninitialized(ScriptStruct->GetStructureSize());
+		ScriptStruct->InitializeStruct(NewStructInfo->Data.GetData());
+		NewStructInfo->OnLoaded.Add(OnLoaded);
 	}
 
 	ScriptStructHooker.Add(Filename, ScriptStruct);
@@ -140,6 +151,7 @@ UAutoSaveSubsystem::FStructLoadOrSaveTask::~FStructLoadOrSaveTask()
 	case ESaveStructState::Loading:
 		StructInfoPtr->State = ESaveStructState::Idle;
 		StructInfoPtr->Data = DataCopy;
+		StructInfoPtr->OnLoaded.Broadcast(StructInfoPtr->Filename);
 		break;
 
 	case ESaveStructState::Saving:
