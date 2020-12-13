@@ -57,6 +57,7 @@ class AUTOSAVE_API UAutoSaveSubsystem : public UGameInstanceSubsystem, public FT
 	GENERATED_BODY()
 
 	friend class UAutoSaveBlueprintLibrary;
+	template<typename SaveStructType> friend class FSaveStructPtr;
 
 public:
 
@@ -70,6 +71,9 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "AutoSave")
 	void GetSaveStructInfosWithoutData(TArray<FSaveStructInfo>& OutSaveStructInfos) const;
+
+	UFUNCTION(BlueprintPure, Category = "AutoSave")
+	int32 GetIdleThreadNum() const;
 
 	FSaveStruct* AddSaveStructRef(const FString& Filename, UScriptStruct* ScriptStruct = nullptr, FSaveStructLoadDelegate OnLoaded = FSaveStructLoadDelegate());
 

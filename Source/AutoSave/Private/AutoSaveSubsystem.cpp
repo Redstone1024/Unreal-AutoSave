@@ -28,6 +28,18 @@ void UAutoSaveSubsystem::GetSaveStructInfosWithoutData(TArray<FSaveStructInfo>& 
 	}
 }
 
+int32 UAutoSaveSubsystem::GetIdleThreadNum() const
+{
+	int32 Result = 0;
+
+	for (const TUniquePtr<FAsyncTask<FStructLoadOrSaveTask>>& Task : TaskThreads)
+	{
+		if (!Task) ++Result;
+	}
+
+	return Result;
+}
+
 FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScriptStruct * ScriptStruct, FSaveStructLoadDelegate OnLoaded)
 {
 	if (StructInfos.Contains(Filename))
