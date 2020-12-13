@@ -7,9 +7,6 @@
 USTRUCT(BlueprintType)
 struct AUTOSAVE_API FSaveStruct { GENERATED_BODY() };
 
-DECLARE_DYNAMIC_DELEGATE_OneParam(FSaveStructLoadDelegate, const FString&, Filename);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSaveStructLoadDelegates, const FString&, Filename);
-
 UENUM(BlueprintType, Category = "AutoSave")
 enum class ESaveStructState : uint8
 {
@@ -19,37 +16,30 @@ enum class ESaveStructState : uint8
 	Saving,
 };
 
-USTRUCT(BlueprintType)
 struct AUTOSAVE_API FSaveStructInfo
 {
-	GENERATED_BODY()
-
-	UPROPERTY(BlueprintReadWrite, Category = "AutoSave")
 	FString Filename;
 
-	UPROPERTY(BlueprintReadWrite, Category = "AutoSave")
 	UScriptStruct* Struct;
 
-	UPROPERTY(BlueprintReadWrite, Category = "AutoSave")
 	ESaveStructState State;
 
-	UPROPERTY(BlueprintReadWrite, Category = "AutoSave")
 	int32 RefConut;
 
-	UPROPERTY(BlueprintReadWrite, Category = "AutoSave")
 	int32 LastRefConut;
 
-	UPROPERTY(BlueprintReadWrite, Category = "AutoSave")
 	FDateTime LastSaveTime;
 
-	UPROPERTY()
 	TArray<uint8> Data;
 	// FSaveStruct* Data;
 
-	UPROPERTY()
-	FSaveStructLoadDelegates OnLoaded;
-
 };
+
+DECLARE_DELEGATE_OneParam(FSaveStructLoadDelegate, const FString&);
+DECLARE_MULTICAST_DELEGATE_OneParam(FSaveStructLoadDelegates, const FString&);
+
+DECLARE_DYNAMIC_DELEGATE_OneParam(FSaveStructLoadDynamicDelegate, const FString&, Filename);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSaveStructLoadDynamicDelegates, const FString&, Filename);
 
 UCLASS(Config = Engine, DefaultConfig)
 class AUTOSAVE_API UAutoSaveSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
@@ -69,13 +59,17 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "AutoSave")
 	FTimespan SaveWaitTime = FTimespan(ETimespan::MaxTicks);
 	
-	UFUNCTION(BlueprintCallable, Category = "AutoSave")
-	void GetSaveStructInfosWithoutData(TArray<FSaveStructInfo>& OutSaveStructInfos) const;
+	UFUNCTION(BlueprintPure, Category = "AutoSave", meta = (DevelopmentOnly))
+	FString GetSaveStructDebugString() const;
 
 	UFUNCTION(BlueprintPure, Category = "AutoSave")
 	int32 GetIdleThreadNum() const;
 
-	FSaveStruct* AddSaveStructRef(const FString& Filename, UScriptStruct* ScriptStruct = nullptr, FSaveStructLoadDelegate OnLoaded = FSaveStructLoadDelegate());
+	FSaveStruct* AddSaveStructRef(const FString& Filename, UScriptStruct* ScriptStruct = nullptr);
+
+	FSaveStruct* AddSaveStructRef(const FString& Filename, UScriptStruct* ScriptStruct, FSaveStructLoadDelegate LoadCallback);
+
+	FSaveStruct* AddSaveStructRef(const FString& Filename, UScriptStruct* ScriptStruct, FSaveStructLoadDynamicDelegate LoadCallback);
 
 	void RemoveSaveStructRef(const FString& Filename);
 	
@@ -113,6 +107,11 @@ private:
 	void HandleTaskStart();
 
 	void HandleTaskDone();
+
+	TMap<FString, FSaveStructLoadDelegates> LoadDelegates;
+	TMap<FString, FSaveStructLoadDynamicDelegates> LoadDynamicDelegates;
+
+	void HandleLoadDelegates();
 
 private:
 

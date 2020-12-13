@@ -14,7 +14,7 @@ class AUTOSAVE_API UAutoSaveBlueprintLibrary : public UBlueprintFunctionLibrary
 public:
 
 	UFUNCTION(BlueprintCallable, Category = "AutoSave", meta = (WorldContext = "WorldContextObject"))
-	static bool AddSaveStructRef(UObject* WorldContextObject, const FString& Filename, UScriptStruct* ScriptStruct, FSaveStructLoadDelegate OnLoaded);
+	static bool AddSaveStructRef(UObject* WorldContextObject, const FString& Filename, UScriptStruct* ScriptStruct, FSaveStructLoadDynamicDelegate LoadCallback);
 
 	UFUNCTION(BlueprintCallable, Category = "AutoSave", meta = (WorldContext = "WorldContextObject"))
 	static void RemoveSaveStructRef(UObject* WorldContextObject, const FString& Filename);

@@ -9,23 +9,57 @@ UAutoSaveSubsystem::UAutoSaveSubsystem(const class FObjectInitializer & ObjectIn
 {
 }
 
-void UAutoSaveSubsystem::GetSaveStructInfosWithoutData(TArray<FSaveStructInfo>& OutSaveStructInfos) const
+FString UAutoSaveSubsystem::GetSaveStructDebugString() const
 {
-	OutSaveStructInfos.SetNum(StructInfos.Num());
+	FString Result;
 
-	int32 Index = 0;
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 
 	for (const TPair<FString, TUniquePtr<FSaveStructInfo>>& Info : StructInfos)
 	{
-		OutSaveStructInfos[Index].Filename     = Info.Value->Filename;
-		OutSaveStructInfos[Index].Struct       = Info.Value->Struct;
-		OutSaveStructInfos[Index].State        = Info.Value->State;
-		OutSaveStructInfos[Index].RefConut     = Info.Value->RefConut;
-		OutSaveStructInfos[Index].LastRefConut = Info.Value->LastRefConut;
-		OutSaveStructInfos[Index].LastSaveTime = Info.Value->LastSaveTime;
+		Result.Append(Info.Value->Filename);
 
-		++Index;
+		Result.Append(TEXT(" - "));
+
+		Result.Append(Info.Value->Struct->GetName());
+
+		Result.Append(TEXT(" - "));
+
+		switch (Info.Value->State)
+		{
+		case ESaveStructState::Preload:
+			Result.Append(TEXT("Preload"));
+			break;
+		case ESaveStructState::Loading:
+			Result.Append(TEXT("Loading"));
+			break;
+		case ESaveStructState::Idle:
+			Result.Append(TEXT("Idle"));
+			break;
+		case ESaveStructState::Saving:
+			Result.Append(TEXT("Saving"));
+			break;
+		default: checkNoEntry();
+		}
+
+		Result.Append(TEXT(" - "));
+
+		Result.Append(FString::Printf(TEXT("%d"), Info.Value->RefConut));
+
+		Result.Append(TEXT(" - "));
+
+		Result.Append(FString::Printf(TEXT("%d"), Info.Value->LastRefConut));
+
+		Result.Append(TEXT(" - "));
+
+		Result.Append(FString::Printf(TEXT("%f"), (FDateTime::Now() - Info.Value->LastSaveTime).GetTotalSeconds()));
+
+		Result.Append(TEXT("\n"));
 	}
+
+#endif
+
+	return Result;
 }
 
 int32 UAutoSaveSubsystem::GetIdleThreadNum() const
@@ -40,7 +74,7 @@ int32 UAutoSaveSubsystem::GetIdleThreadNum() const
 	return Result;
 }
 
-FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScriptStruct * ScriptStruct, FSaveStructLoadDelegate OnLoaded)
+FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScriptStruct * ScriptStruct)
 {
 	if (StructInfos.Contains(Filename))
 	{
@@ -54,15 +88,6 @@ FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScr
 
 		// Increase the reference count of SaveStruct by one, and then decrease it accordingly in UAutoSaveSubsystem::RemoveSaveStructRef
 		StructInfo->RefConut++;
-
-		if (StructInfo->State == ESaveStructState::Preload || StructInfo->State == ESaveStructState::Loading)
-		{
-			StructInfo->OnLoaded.Add(OnLoaded);
-		}
-		else
-		{
-			OnLoaded.ExecuteIfBound(Filename);
-		}
 
 		return (FSaveStruct*)StructInfo->Data.GetData();
 	}
@@ -87,7 +112,6 @@ FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScr
 		NewStructInfo->LastSaveTime = FDateTime::Now();
 		NewStructInfo->Data.SetNumUninitialized(ScriptStruct->GetStructureSize());
 		ScriptStruct->InitializeStruct(NewStructInfo->Data.GetData());
-		NewStructInfo->OnLoaded.Add(OnLoaded);
 	}
 	else
 	{
@@ -103,7 +127,6 @@ FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScr
 		NewStructInfo->LastSaveTime = FDateTime::Now();
 		NewStructInfo->Data.SetNumUninitialized(ScriptStruct->GetStructureSize());
 		ScriptStruct->InitializeStruct(NewStructInfo->Data.GetData());
-		NewStructInfo->OnLoaded.Add(OnLoaded);
 	}
 
 	ScriptStructHooker.Add(Filename, ScriptStruct);
@@ -112,6 +135,42 @@ FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString& Filename, UScr
 	StructInfos[Filename].Reset(NewStructInfo.Release());
 
 	return (FSaveStruct*)StructInfos[Filename]->Data.GetData();
+}
+
+FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString & Filename, UScriptStruct * ScriptStruct, FSaveStructLoadDelegate LoadCallback)
+{
+	FSaveStruct* Result = AddSaveStructRef(Filename, ScriptStruct);
+
+	if (!LoadCallback.IsBound()) return Result;
+
+	if (!Result) return nullptr;
+
+	if (!LoadDelegates.Contains(Filename))
+	{
+		LoadDelegates.Add(Filename);
+	}
+
+	LoadDelegates[Filename].Add(LoadCallback);
+
+	return Result;
+}
+
+FSaveStruct * UAutoSaveSubsystem::AddSaveStructRef(const FString & Filename, UScriptStruct * ScriptStruct, FSaveStructLoadDynamicDelegate LoadCallback)
+{
+	FSaveStruct* Result = AddSaveStructRef(Filename, ScriptStruct);
+
+	if (!LoadCallback.IsBound()) return Result;
+
+	if (!Result) return nullptr;
+
+	if (!LoadDynamicDelegates.Contains(Filename))
+	{
+		LoadDynamicDelegates.Add(Filename);
+	}
+
+	LoadDynamicDelegates[Filename].Add(LoadCallback);
+
+	return Result;
 }
 
 void UAutoSaveSubsystem::RemoveSaveStructRef(const FString& Filename)
@@ -163,7 +222,6 @@ UAutoSaveSubsystem::FStructLoadOrSaveTask::~FStructLoadOrSaveTask()
 	case ESaveStructState::Loading:
 		StructInfoPtr->State = ESaveStructState::Idle;
 		StructInfoPtr->Data = DataCopy;
-		StructInfoPtr->OnLoaded.Broadcast(StructInfoPtr->Filename);
 		break;
 
 	case ESaveStructState::Saving:
@@ -317,6 +375,59 @@ void UAutoSaveSubsystem::HandleTaskDone()
 	}
 }
 
+void UAutoSaveSubsystem::HandleLoadDelegates()
+{
+	// Delegates
+	{
+		TArray<FString> DelegatesToRemove;
+
+		for (const TPair<FString, FSaveStructLoadDelegates>& Delegates : LoadDelegates)
+		{
+			if (!StructInfos.Contains(Delegates.Key))
+			{
+				DelegatesToRemove.Add(Delegates.Key);
+				continue;
+			}
+
+			if (StructInfos[Delegates.Key]->State == ESaveStructState::Idle || StructInfos[Delegates.Key]->State == ESaveStructState::Saving)
+			{
+				Delegates.Value.Broadcast(Delegates.Key);
+				DelegatesToRemove.Add(Delegates.Key);
+			}
+		}
+
+		for (const FString& Filename : DelegatesToRemove)
+		{
+			LoadDelegates.Remove(Filename);
+		}
+	}
+
+	// DynamicDelegates
+	{
+		TArray<FString> DynamicDelegatesToRemove;
+
+		for (const TPair<FString, FSaveStructLoadDynamicDelegates>& Delegates : LoadDynamicDelegates)
+		{
+			if (!StructInfos.Contains(Delegates.Key))
+			{
+				DynamicDelegatesToRemove.Add(Delegates.Key);
+				continue;
+			}
+
+			if (StructInfos[Delegates.Key]->State == ESaveStructState::Idle || StructInfos[Delegates.Key]->State == ESaveStructState::Saving)
+			{
+				Delegates.Value.Broadcast(Delegates.Key);
+				DynamicDelegatesToRemove.Add(Delegates.Key);
+			}
+		}
+
+		for (const FString& Filename : DynamicDelegatesToRemove)
+		{
+			LoadDynamicDelegates.Remove(Filename);
+		}
+	}
+}
+
 void UAutoSaveSubsystem::Initialize(FSubsystemCollectionBase & Collection)
 {
 	if (MaxThreadNum > 0)
@@ -355,4 +466,5 @@ void UAutoSaveSubsystem::Tick(float DeltaTime)
 {
 	HandleTaskDone();
 	HandleTaskStart();
+	HandleLoadDelegates();
 }

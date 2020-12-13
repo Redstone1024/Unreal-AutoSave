@@ -19,7 +19,27 @@ public:
 	{
 	}
 
-	FORCEINLINE FSaveStructPtr(UAutoSaveSubsystem* InAutoSaveSubsystem, const FString& Filename, FSaveStructLoadDelegate OnLoaded = FSaveStructLoadDelegate())
+	FORCEINLINE FSaveStructPtr(UAutoSaveSubsystem* InAutoSaveSubsystem, const FString& Filename)
+		: AutoSaveSubsystem(InAutoSaveSubsystem)
+		, Info(nullptr)
+	{
+		if (AutoSaveSubsystem->AddSaveStructRef(Filename, SaveStructType::StaticStruct()))
+		{
+			Info = AutoSaveSubsystem->StructInfos[Filename].Get();
+		}
+	}
+
+	FORCEINLINE FSaveStructPtr(UAutoSaveSubsystem* InAutoSaveSubsystem, const FString& Filename, FSaveStructLoadDelegate OnLoaded)
+		: AutoSaveSubsystem(InAutoSaveSubsystem)
+		, Info(nullptr)
+	{
+		if (AutoSaveSubsystem->AddSaveStructRef(Filename, SaveStructType::StaticStruct(), OnLoaded))
+		{
+			Info = AutoSaveSubsystem->StructInfos[Filename].Get();
+		}
+	}
+
+	FORCEINLINE FSaveStructPtr(UAutoSaveSubsystem* InAutoSaveSubsystem, const FString& Filename, FSaveStructLoadDynamicDelegate OnLoaded)
 		: AutoSaveSubsystem(InAutoSaveSubsystem)
 		, Info(nullptr)
 	{
